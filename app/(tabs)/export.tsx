@@ -18,8 +18,9 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function ExportScreen() {
     const [competitionCode, setCompetitionCode] = useState("");
-    const [QvsQchoice, setQvsQchoice] = useState("Qualitative");
+    const [QvsQchoice, setQvsQchoice] = useState("Quantitative");
     const [scoutTeamFilter, setScoutTeamFilter] = useState('');
+
 
     const exportData = async (format: 'csv' | 'excel') => {
         if (!competitionCode || competitionCode.trim() === '') {
@@ -214,7 +215,7 @@ export default function ExportScreen() {
                     {/* Team Filter Input */}
                     <View className="bg-black">
                         <Text className="text-cyan-500 text-xs font-bold uppercase tracking-widest mb-2 ml-1">
-                            Team Filter (Optional)
+                            Scout Team Filter (Optional)
                         </Text>
                         <TextInput
                             value={scoutTeamFilter}
@@ -231,21 +232,9 @@ export default function ExportScreen() {
                         <Text className="text-cyan-500 text-xs font-bold uppercase tracking-widest mb-3 ml-1">
                             Data Type
                         </Text>
+
                         <View className="flex-row gap-3 bg-black">
-                            <TouchableOpacity
-                                onPress={() => setQvsQchoice("Qualitative")}
-                                className={`flex-1 py-4 rounded-2xl border-2 ${
-                                    QvsQchoice === "Qualitative"
-                                        ? 'bg-cyan-500 border-cyan-500'
-                                        : 'bg-neutral-900 border-cyan-500/30'
-                                }`}
-                            >
-                                <Text className={`text-center font-black uppercase tracking-tight ${
-                                    QvsQchoice === "Qualitative" ? 'text-black' : 'text-cyan-500'
-                                }`}>
-                                    Qualitative
-                                </Text>
-                            </TouchableOpacity>
+
 
                             <TouchableOpacity
                                 onPress={() => setQvsQchoice("Quantitative")}
@@ -261,6 +250,24 @@ export default function ExportScreen() {
                                     Quantitative
                                 </Text>
                             </TouchableOpacity>
+
+
+                            <TouchableOpacity
+                                onPress={() => setQvsQchoice("Qualitative")}
+                                className={`flex-1 py-4 rounded-2xl border-2 ${
+                                    QvsQchoice === "Qualitative"
+                                        ? 'bg-cyan-500 border-cyan-500'
+                                        : 'bg-neutral-900 border-cyan-500/30'
+                                }`}
+                            >
+                                <Text className={`text-center font-black uppercase tracking-tight ${
+                                    QvsQchoice === "Qualitative" ? 'text-black' : 'text-cyan-500'
+                                }`}>
+                                    Qualitative
+                                </Text>
+                            </TouchableOpacity>
+
+
                         </View>
                     </View>
                 </View>

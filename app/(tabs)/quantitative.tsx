@@ -86,6 +86,7 @@ export default function TabOneScreen() {
     const [isOnline, setIsOnline] = useState(true);
     const [pendingUploads, setPendingUploads] = useState(0);
     const params = useLocalSearchParams();
+    const [matchType, setMatchType] = useState('qm');
 
     useEffect(() => {
         console.log('1. useEffect triggered');
@@ -98,14 +99,19 @@ export default function TabOneScreen() {
             handleSelectedData(data);
         }
     }, [params.selectedData]);
-    const handleSelectedData = (data: any) => {
-        // Extract competition code from HKey if needed (format: "2025joh-4-1860")
-        console.log('6. populateFormWithData called');
-        console.log('7. Setting teamNumber to:', data.teamNumber);
-        const competitionFromHKey = data.HKey?.split('-')[0] || '';
 
-        // Set all form values
-        setMatchNumber(data.matchNumber?.toString() || "");
+
+    const handleSelectedData = (data: any) => {
+        console.log('6. populateFormWithData called');
+
+        // --- MATCH NUMBER CLEANING LOGIC ---
+        const rawMatch = data.matchNumber?.toString() || "";
+
+        // 2. Strip all non-numeric characters (e.g., "f2" becomes "2")
+        const numericOnly = rawMatch.replace(/[^0-9]/g, '');
+        setMatchNumber(numericOnly);
+        // -----------------------------------
+
         setTeamNumber(data.teamNumber?.toString() || "");
 
         // Auto
@@ -156,7 +162,6 @@ export default function TabOneScreen() {
         // Misc
         setComments(data.comments || '');
         console.log('8. After setState');
-
     };
 
     const CheckboxCell = ({ value, onToggle }: { value: number; onToggle: () => void }) => (
@@ -172,6 +177,10 @@ export default function TabOneScreen() {
         </TouchableOpacity>
     );
 
+    const getFullMatchNumber = () => {
+        // This creates strings like "qm45", "sf10", or "f1"
+        return `${matchType}${matchNumber}`;
+    };
 
     const updateCounter = (amount: number, counter: React.Dispatch<React.SetStateAction<number>>) => {
         counter(prevValue => prevValue + amount);
@@ -204,6 +213,29 @@ export default function TabOneScreen() {
             console.error('Error loading values:', error);
         }
     };
+
+
+    const loadSettings = async () => {
+        try {
+            const savedName = await AsyncStorage.getItem('name');
+            const savedTeamNumber = await AsyncStorage.getItem('teamNumber');
+            const savedCompetitionCode = await AsyncStorage.getItem('competitionCode');
+            const savedMatchType = await AsyncStorage.getItem('matchType'); // Added this
+
+            setUserName(savedName || '');
+            setUserTeamNumber(savedTeamNumber || '');
+            setCompetitionCode(savedCompetitionCode || '');
+            if (savedMatchType) setMatchType(savedMatchType); // Update state
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        }
+    };
+
+    useFocusEffect(
+        React.useCallback(() => {
+            loadSettings();
+        }, [])
+    );
 
 
     // Load competition code from settings on mount
@@ -245,39 +277,53 @@ export default function TabOneScreen() {
     }, [matchNumber, Position, competitionCode]);
 
     const fetchTeamNumber = async () => {
+        // Prevent fetching if required fields are missing
+        if (!matchNumber || !Position || !competitionCode) {
+            return;
+        }
+
         setIsLoading(true);
         try {
-
-
-            // The Blue Alliance API endpoint
+            // 1. The Blue Alliance API endpoint
             const apiUrl = `https://www.thebluealliance.com/api/v3/event/${competitionCode}/matches/simple`;
 
-            // Replace with your TBA auth key from https://www.thebluealliance.com/account
+            // Your TBA auth key
             const TBA_AUTH_KEY = '3TklPnjeCtdcjYFnv7axxHWx0DTUEwkUYgvgVJodaPZGj6KDJ8T4lE0inTcQ7PgO';
 
             console.log(`Fetching from: ${apiUrl}`);
-            console.log(`Looking for match: ${matchNumber}, position: ${Position}`);
+            console.log(`Searching Match Type: ${matchType}, Number: ${matchNumber}`);
 
             const response = await axios.get(apiUrl, {
                 headers: {
                     'X-TBA-Auth-Key': TBA_AUTH_KEY
                 },
-                timeout: 10000 // 10 second timeout
+                timeout: 10000
             });
 
-            console.log(`Found ${response.data.length} matches`);
+            const inputNum = parseInt(matchNumber);
 
-            // Find the qualification match
-            const match = response.data.find(
-                (m: any) => m.comp_level === 'qm' && m.match_number === parseInt(matchNumber)
-            );
+            // 2. Find the match using dynamic matchType and playoff logic
+            const match = response.data.find((m: any) => {
+                const inputNum = parseInt(matchNumber);
+
+                // Qualifications and Finals use match_number
+                if (matchType === 'qm' || matchType === 'f') {
+                    return m.comp_level === matchType && m.match_number === inputNum;
+                }
+                // Playoffs (sf) use input as set_number
+                else if (matchType === 'sf') {
+                    return m.comp_level === 'sf' && m.set_number === inputNum && m.match_number === 1;
+                }
+                return false;
+            });
 
             if (match) {
-                console.log('Match found:', match);
+                console.log('Match found:', match.key);
                 let team = '';
                 const alliances = match.alliances;
 
                 // Map alliance position to team
+                // Note: Keep these case strings EXACTLY as they appear in your dropdown options
                 switch (Position) {
                     case 'Blue1':
                         team = alliances.blue.team_keys[0]?.replace('frc', '') || '';
@@ -306,29 +352,29 @@ export default function TabOneScreen() {
                     Alert.alert('Not Found', 'Team not found for this match and position');
                 }
             } else {
-                Alert.alert('Not Found', `Match ${matchNumber} not found in event ${competitionCode}`);
+                // Label mapping for the alert
+                const typeLabel = matchType === 'qm' ? 'Qualification' : matchType === 'sf' ? 'Playoff' : 'Final';
+                Alert.alert('Not Found', `${typeLabel} Match ${matchNumber} not found in event ${competitionCode}`);
             }
         } catch (error: any) {
             console.error('Error fetching team number:', error);
 
-            // Detailed error handling
+            // Detailed error handling preserved
             if (error.code === 'ECONNABORTED') {
                 Alert.alert('Timeout', 'Request timed out. Please check your internet connection.');
             } else if (error.response) {
-                // Server responded with error
                 const status = error.response.status;
                 if (status === 401) {
                     Alert.alert('API Error', 'Invalid API key. Please check your TBA auth key.');
                 } else if (status === 404) {
-                    Alert.alert('Not Found', `Event code "${competitionCode}" not found. Please check your competition code in settings.`);
+                    Alert.alert('Not Found', `Event code "${competitionCode}" not found.`);
                 } else {
                     Alert.alert('API Error', `Status: ${status}. ${error.response.data?.Error || 'Unknown error'}`);
                 }
             } else if (error.request) {
-                // Request made but no response
                 Alert.alert('Network Error', 'No response from server. Check your internet connection.');
             } else {
-                Alert.alert('Error', 'Failed to fetch team number. You can enter it manually.');
+                Alert.alert('Error', 'Failed to fetch team number.');
             }
         } finally {
             setIsLoading(false);
@@ -336,27 +382,23 @@ export default function TabOneScreen() {
     };
 
     const generateKey = () => {
-        const key = `${competitionCode}-${matchNumber}-${teamNumber}-${userName}-${userTeamNumber}`;
+        const key = `${competitionCode}-${getFullMatchNumber()}-${teamNumber}-${userName}-${userTeamNumber}`;
         return key;
     };
 
     const generateHKey=()=>{
-        const HKey = `${competitionCode}-${matchNumber}-${teamNumber}`;
+        const HKey = `${competitionCode}-${getFullMatchNumber()}-${teamNumber}`;
         return HKey;
 
     }
 
     // Function 1: Concatenate all data into a string
     const concatenateData = () => {
-        const key = generateKey();
-        const Hkey = generateHKey()
+
         const data = {
-            key: key,
-            Hkey: Hkey,
-            competitionCode: competitionCode || 0,
             userTeamNumber: userTeamNumber || 0,
-            userName: userName || 0,
-            matchNumber: matchNumber || 0,
+            matchNumber:getFullMatchNumber(),
+            competitionCode: competitionCode || 0,
             teamNumber: teamNumber || 0,
             // Auto
             AutoFuel: AutoFuel || 0,
@@ -629,7 +671,7 @@ export default function TabOneScreen() {
 
         console.log('========== 📤 SEND START ==========');
         console.log('userName:', userName);
-        console.log('matchNumber:', matchNumber);
+        console.log('matchNumber:', getFullMatchNumber());
         console.log('teamNumber:', teamNumber);
         console.log('competitionCode:', competitionCode);
 
@@ -674,7 +716,7 @@ export default function TabOneScreen() {
                 competitionCode: competitionCode || 0,
                 userTeamNumber: userTeamNumber || 0,
                 userName: userName || '',
-                matchNumber: matchNumber || 0,
+                matchNumber: getFullMatchNumber() || 0,
                 teamNumber: teamNumber || 0,
                 // Auto
                 AutoFuel: AutoFuel || 0,
@@ -790,7 +832,7 @@ export default function TabOneScreen() {
                 competitionCode: competitionCode || 0,
                 userTeamNumber: userTeamNumber || 0,
                 userName: userName || '',
-                matchNumber: matchNumber || 0,
+                matchNumber: getFullMatchNumber() || 0,
                 teamNumber: teamNumber || 0,
                 // Auto
                 AutoFuel: AutoFuel || 0,

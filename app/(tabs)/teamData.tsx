@@ -141,7 +141,7 @@ export default function AnalysisScreen() {
                         <TextInput
                             value={scoutTeamFilter}
                             onChangeText={setScoutTeamFilter}
-                            placeholder="All Teams"
+                            placeholder="Leave empty for all teams"
                             placeholderTextColor="#4b5563"
                             keyboardType="numeric"
                             className="bg-neutral-900 border-2 border-emerald-500/20 focus:border-emerald-500 rounded-2xl p-4 text-lg text-white"

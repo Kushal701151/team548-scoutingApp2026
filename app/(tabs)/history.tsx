@@ -42,6 +42,31 @@ export default function HistoryScreen() {
         setModalVisible(false);
     };
 
+    const getFullMatchNumber = () => {
+        return `${matchType}${matchNumber}`;
+    };
+
+    // Match Type states
+    const [matchType, setMatchType] = useState('qm');
+    const [matchTypeDropdownVisible, setMatchTypeDropdownVisible] = useState(false);
+
+    // Match type options
+    const matchTypeOptions = [
+        { label: 'Qualification', value: 'qm' },
+        { label: 'Playoff', value: 'sf' },
+        { label: 'Final', value: 'f' }
+    ];
+
+    // Get label from match type value
+    const getMatchTypeLabel = () => {
+        return matchTypeOptions.find(option => option.value === matchType)?.label || 'Qualification';
+    };
+
+    const selectMatchType = (value: string) => {
+        setMatchType(value);
+        setMatchTypeDropdownVisible(false);
+    };
+
     const getPositionLabel = () => {
         return positions.find(p => p.value === position)?.label || 'SELECT';
     };
@@ -61,35 +86,42 @@ export default function HistoryScreen() {
         if (matchNumber && position && competition) {
             fetchTeamNumber();
         }
-    }, [matchNumber, position, competition]);
+    }, [matchNumber, position, competition, matchType]);
 
     const fetchTeamNumber = async () => {
+        if (!matchNumber || !position || !competition) return; // Guard clause
         setIsLoading(true);
         try {
             const apiUrl = `https://www.thebluealliance.com/api/v3/event/${competition}/matches/simple`;
             const TBA_AUTH_KEY = '3TklPnjeCtdcjYFnv7axxHWx0DTUEwkUYgvgVJodaPZGj6KDJ8T4lE0inTcQ7PgO';
 
-            console.log(`Fetching from: ${apiUrl}`);
             const response = await axios.get(apiUrl, {
                 headers: { 'X-TBA-Auth-Key': TBA_AUTH_KEY },
                 timeout: 10000
             });
 
-            const match = response.data.find(
-                (m: any) => m.comp_level === 'qm' && m.match_number === parseInt(matchNumber)
-            );
+            const inputNum = parseInt(matchNumber);
+
+            // Updated Match Finding Logic
+            const match = response.data.find((m: any) => {
+                if (matchType === 'qm' || matchType === 'f') {
+                    // Quals and Finals look at match_number
+                    return m.comp_level === matchType && m.match_number === inputNum;
+                } else if (matchType === 'sf') {
+                    // Playoffs (sf) look at set_number and force match 1
+                    return m.comp_level === 'sf' && m.set_number === inputNum && m.match_number === 1;
+                }
+                return false;
+            });
 
             if (match) {
                 let team = '';
                 const alliances = match.alliances;
-                switch (position) {
-                    case 'Blue1': team = alliances.blue.team_keys[0]?.replace('frc', '') || ''; break;
-                    case 'Blue2': team = alliances.blue.team_keys[1]?.replace('frc', '') || ''; break;
-                    case 'Blue3': team = alliances.blue.team_keys[2]?.replace('frc', '') || ''; break;
-                    case 'Red1': team = alliances.red.team_keys[0]?.replace('frc', '') || ''; break;
-                    case 'Red2': team = alliances.red.team_keys[1]?.replace('frc', '') || ''; break;
-                    case 'Red3': team = alliances.red.team_keys[2]?.replace('frc', '') || ''; break;
-                }
+                // Map alliance position to team
+                const isBlue = position.startsWith('Blue');
+                const posIndex = parseInt(position.slice(-1)) - 1;
+                team = alliances[isBlue ? 'blue' : 'red'].team_keys[posIndex]?.replace('frc', '') || '';
+
                 if (team) { setTeamNumber(team); }
             }
         } catch (error: any) {
@@ -100,7 +132,7 @@ export default function HistoryScreen() {
     };
 
     const searchByHkeyQn = async () => {
-        const hkey = `${competition}-${matchNumber}-${teamNumber}`;
+        const hkey = `${competition}-${getFullMatchNumber()}-${teamNumber}`;
         const { data, error } = await supabase
             .from('Scouting Raw Data')
             .select('key, userTeamNumber')
@@ -132,7 +164,7 @@ export default function HistoryScreen() {
     };
 
     const searchByHkeyQl = async () => {
-        const hkey = `${competition}-${matchNumber}-${teamNumber}`;
+        const hkey = `${competition}-${getFullMatchNumber()}-${teamNumber}`;
         const { data, error } = await supabase
             .from('Scouting Qualitative Data')
             .select('key, userTeamNumber')
@@ -165,6 +197,34 @@ export default function HistoryScreen() {
 
     return (
         <ScrollView className="flex-1 bg-black">
+            <Modal animationType="slide" transparent={true} visible={matchTypeDropdownVisible}>
+                <View className="flex-1 justify-end bg-black/80">
+                    <View className="bg-neutral-900 rounded-t-[40px] p-8 border-t-2 border-cyan-500/30">
+                        <Text className="text-cyan-500 text-xs font-black uppercase tracking-widest mb-6 text-center">
+                            Select Match Type
+                        </Text>
+                        {matchTypeOptions.map((type) => (
+                            <TouchableOpacity
+                                key={type.value}
+                                onPress={() => selectMatchType(type.value)}
+                                className={`p-5 rounded-2xl mb-3 border-2 ${
+                                    matchType === type.value ? 'bg-cyan-500 border-cyan-500' : 'bg-black border-cyan-500/20'
+                                }`}
+                            >
+                                <Text className={`text-center font-bold text-lg ${matchType === type.value ? 'text-black' : 'text-white'}`}>
+                                    {type.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                        <TouchableOpacity
+                            onPress={() => setMatchTypeDropdownVisible(false)}
+                            className="mt-4 py-4 border-2 border-cyan-500 rounded-2xl bg-black"
+                        >
+                            <Text className="text-white text-center font-bold uppercase">Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
             <View className="px-6 pt-16 pb-10 bg-black">
 
                 {/* Standard Header */}
@@ -204,6 +264,21 @@ export default function HistoryScreen() {
                         />
                     </View>
 
+                    {/* Match Type Selector */}
+                    <View className="bg-black">
+                        <Text className="text-cyan-500 text-xs font-bold uppercase tracking-widest mb-2 ml-1">
+                            Match Type
+                        </Text>
+                        <TouchableOpacity
+                            onPress={() => setMatchTypeDropdownVisible(true)}
+                            className="bg-neutral-900 border-2 border-cyan-500/20 rounded-2xl p-4"
+                        >
+                            <Text className="text-lg text-white font-medium">
+                                {getMatchTypeLabel()}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+
                     <View className="bg-blcaack">
                         <Text className="text-cyan-500 text-xs font-bold uppercase tracking-widest mb-2 ml-1">
                             Position
@@ -212,7 +287,7 @@ export default function HistoryScreen() {
                             onPress={() => setModalVisible(true)}
                             className="bg-neutral-900 border-2 border-cyan-500/20 rounded-2xl p-4"
                         >
-                            <Text className={`text-lg ${!position ? 'text-white' : 'text-white'}`}>
+                            <Text className={`text-lg ${!position ? 'text-white font-bold' : 'text-white font-bold'}`}>
                                 {!position ? 'Select Position' : getPositionLabel()}
                             </Text>
                         </TouchableOpacity>

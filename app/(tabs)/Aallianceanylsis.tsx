@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, Alert } from 'react-native';
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    ScrollView,
+    ActivityIndicator,
+    Dimensions,
+    Alert,
+    Modal
+} from 'react-native';
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import { BarChart } from 'react-native-chart-kit';
@@ -32,6 +42,27 @@ export default function MatchStrategyScreen() {
     const [loadingStats, setLoadingStats] = useState(false);
     const [selectedMetric, setSelectedMetric] = useState<'points' | 'passes' | 'autoFuel' | 'climb'>('points');
 
+
+    // Match Type states
+    const [matchType, setMatchType] = useState('qm');
+    const [matchTypeDropdownVisible, setMatchTypeDropdownVisible] = useState(false);
+
+    // Match type options
+    const matchTypeOptions = [
+        { label: 'Qualification', value: 'qm' },
+        { label: 'Playoff', value: 'sf' },
+        { label: 'Final', value: 'f' }
+    ];
+
+    // Get label from match type value
+    const getMatchTypeLabel = () => {
+        return matchTypeOptions.find(option => option.value === matchType)?.label || 'Qualification';
+    };
+
+    const selectMatchType = (value: string) => {
+        setMatchType(value);
+        setMatchTypeDropdownVisible(false);
+    };
     const fetchMatchDetails = async () => {
         if (!competitionCode || !matchNumber) {
             Alert.alert("Missing Info", "Enter Competition Code and Match #");
@@ -40,19 +71,38 @@ export default function MatchStrategyScreen() {
         setLoadingMatch(true);
         try {
             const TBA_AUTH_KEY = '3TklPnjeCtdcjYFnv7axxHWx0DTUEwkUYgvgVJodaPZGj6KDJ8T4lE0inTcQ7PgO';
-            const response = await axios.get(`https://www.thebluealliance.com/api/v3/event/${competitionCode}/matches/simple`, {
-                headers: { 'X-TBA-Auth-Key': TBA_AUTH_KEY },
-                timeout: 10000
+            const response = await axios.get(
+                `https://www.thebluealliance.com/api/v3/event/${competitionCode}/matches/simple`,
+                {
+                    headers: { 'X-TBA-Auth-Key': TBA_AUTH_KEY },
+                    timeout: 10000
+                }
+            );
+
+            const inputNum = parseInt(matchNumber);
+
+            // Filter logic matching your other screens
+            const match = response.data.find((m: any) => {
+                if (matchType === 'qm' || matchType === 'f') {
+                    // Quals and Finals look at match_number
+                    return m.comp_level === matchType && m.match_number === inputNum;
+                } else if (matchType === 'sf') {
+                    // Playoffs (sf) look at set_number and force match 1
+                    return m.comp_level === 'sf' && m.set_number === inputNum && m.match_number === 1;
+                }
+                return false;
             });
-            const match = response.data.find((m: any) => m.comp_level === 'qm' && m.match_number === parseInt(matchNumber));
+
             if (match) {
                 setRedTeams(match.alliances.red.team_keys.map((k: string) => parseInt(k.replace('frc', ''))));
                 setBlueTeams(match.alliances.blue.team_keys.map((k: string) => parseInt(k.replace('frc', ''))));
             } else {
-                Alert.alert('Not Found', `Match ${matchNumber} not found.`);
+                const typeLabel = matchTypeOptions.find(opt => opt.value === matchType)?.label;
+                Alert.alert('Not Found', `${typeLabel} Match ${matchNumber} not found.`);
             }
         } catch (error) {
-            Alert.alert('Error', 'Failed to fetch match data.');
+            console.error(error);
+            Alert.alert('Error', 'Failed to fetch match data from TBA.');
         } finally {
             setLoadingMatch(false);
         }
@@ -119,6 +169,34 @@ export default function MatchStrategyScreen() {
 
     return (
         <ScrollView className="flex-1 bg-black">
+            <Modal animationType="slide" transparent={true} visible={matchTypeDropdownVisible}>
+                <View className="flex-1 justify-end bg-black/80">
+                    <View className="bg-neutral-900 rounded-t-[40px] p-8 border-t-2 border-emerald-500/30">
+                        <Text className="text-emerald-500 text-xs font-black uppercase tracking-widest mb-6 text-center">
+                            Select Match Type
+                        </Text>
+                        {matchTypeOptions.map((type) => (
+                            <TouchableOpacity
+                                key={type.value}
+                                onPress={() => selectMatchType(type.value)}
+                                className={`p-5 rounded-2xl mb-3 border-2 ${
+                                    matchType === type.value ? 'bg-emerald-500 border-emerald-500' : 'bg-black border-emerald-500/20'
+                                }`}
+                            >
+                                <Text className={`text-center font-bold text-lg ${matchType === type.value ? 'text-black' : 'text-white'}`}>
+                                    {type.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                        <TouchableOpacity
+                            onPress={() => setMatchTypeDropdownVisible(false)}
+                            className="mt-4 py-4 border-2 border-emerald-500 rounded-2xl bg-black"
+                        >
+                            <Text className="text-white text-center font-bold uppercase">Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
             <View className="px-6 pt-16 pb-10">
 
                 {/* Header */}
@@ -127,7 +205,7 @@ export default function MatchStrategyScreen() {
                 </View>
 
                 {/* Search Bar - Fixed items-end */}
-                <View className="flex-row gap-2 items-end mb-6">
+                <View className="flex-row gap-2 items-end mb-3">
                     <View className="flex-[2]">
                         <Text className="text-emerald-500 text-[10px] font-black uppercase tracking-widest mb-1 ml-1">Competition Code </Text>
                         <TextInput
@@ -135,6 +213,8 @@ export default function MatchStrategyScreen() {
                             onChangeText={setCompetitionCode}
                             autoCapitalize="none"
                             autoCorrect={false}
+                            placeholder="e.g. 2024joh"
+                            placeholderTextColor="#4b5563"
                             className="bg-neutral-900 border-2 border-emerald-500/20 focus:border-emerald-500 rounded-xl p-3 text-white font-bold h-12"
                         />
                     </View>
@@ -147,7 +227,23 @@ export default function MatchStrategyScreen() {
                             className="bg-neutral-900 border-2 border-emerald-500/20 focus:border-emerald-500 rounded-xl p-3 text-white font-bold text-center h-12"
                         />
                     </View>
-                    <TouchableOpacity onPress={fetchMatchDetails} className="bg-emerald-500 w-12 h-12 rounded-xl items-center justify-center">
+                </View>
+
+                <View className="flex-row gap-2 items-end mb-6 justify-start">
+                    <View className="flex-1">
+                        <Text className="text-emerald-500 text-[10px] font-black uppercase tracking-widest mb-1 ml-1">MATCH TYPE</Text>
+                        <TouchableOpacity
+                            onPress={() => setMatchTypeDropdownVisible(true)}
+                            className="bg-neutral-900 border-2 border-emerald-500/20 rounded-xl p-4"
+                        >
+                            <Text className=" text-white font-bold">
+                                {getMatchTypeLabel()}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity onPress={fetchMatchDetails} className="bg-emerald-500 w-20 h-14 rounded-xl items-center justify-center">
+                        {/* Removed ml-4 from here since you have gap-2 on parent */}
                         {loadingMatch ? <ActivityIndicator color="black" /> : <FontAwesome name="search" size={18} color="black" />}
                     </TouchableOpacity>
                 </View>

@@ -49,7 +49,9 @@ export default function QualitativeScouting() {
     const [pendingUploads, setPendingUploads] = useState(0);
     const params = useLocalSearchParams();
 
-
+    const [matchType, setMatchType] = useState('qm');
+    const [matchTypeLabel, setMatchTypeLabel] = useState('Select');
+    const [matchTypeDropdownVisible, setMatchTypeDropdownVisible] = useState(false);
 
     const loadValuesFromStorage = async () => {
         try {
@@ -63,6 +65,8 @@ export default function QualitativeScouting() {
             console.error('Error loading values:', error);
         }
     };
+
+
 
 
     // Load competition code from settings on mount
@@ -84,6 +88,36 @@ export default function QualitativeScouting() {
             loadValuesFromStorage();
         }, [])
     );
+
+
+    useEffect(() => {
+        loadMatchType();
+    }, []);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            loadMatchType();
+        }, [])
+    );
+
+    const loadMatchType = async () => {
+        try {
+            const savedMatchType = await AsyncStorage.getItem('matchType');
+            const savedMatchTypeLabel = await AsyncStorage.getItem('matchTypeLabel');
+            if (savedMatchType !== null) {
+                setMatchType(savedMatchType);
+            }
+            if (savedMatchTypeLabel !== null) {
+                setMatchTypeLabel(savedMatchTypeLabel);
+            }
+        } catch (error) {
+            console.error('Error loading match type:', error);
+        }
+    };
+
+    const getFullMatchNumber = () => {
+        return `${matchType}${matchNumber}`;
+    };
 
     const loadCompetitionCode = async () => {
         try {
@@ -132,9 +166,20 @@ export default function QualitativeScouting() {
             console.log(`Found ${response.data.length} matches`);
 
             // Find the qualification match
-            const match = response.data.find(
-                (m: any) => m.comp_level === 'qm' && m.match_number === parseInt(matchNumber)
-            );
+            const match = response.data.find((m: any) => {
+                const inputNum = parseInt(matchNumber);
+
+                // Qualifications and Finals use match_number
+                if (matchType === 'qm' || matchType === 'f') {
+                    return m.comp_level === matchType && m.match_number === inputNum;
+                }
+                // Playoffs (sf) use input as set_number
+                else if (matchType === 'sf') {
+                    return m.comp_level === 'sf' && m.set_number === inputNum && m.match_number === 1;
+                }
+                return false;
+            });
+
 
             if (match) {
                 console.log('Match found:', match);
@@ -200,12 +245,12 @@ export default function QualitativeScouting() {
     };
 
     const generateKey = () => {
-        const key = `${competitionCode}-${matchNumber}-${teamNumber}-${userName}-${userTeamNumber}`;
+        const key = `${competitionCode}-${getFullMatchNumber()}-${teamNumber}-${userName}-${userTeamNumber}`;
         return key;
     };
 
     const generateHKey = () => {
-        const HKey = `${competitionCode}-${matchNumber}-${teamNumber}`;
+        const HKey = `${competitionCode}-${getFullMatchNumber()}-${teamNumber}`;
         return HKey;
 
     }
@@ -217,6 +262,17 @@ export default function QualitativeScouting() {
         {label: 'Red 2', value: 'Red2'},
         {label: 'Red 3', value: 'Red3'},
     ];
+    const matchTypeOptions = [
+        { label: 'Qual', value: 'qm' },
+        { label: 'Semi', value: 'sf' },
+        { label: 'Final', value: 'f' }
+    ];
+
+    const selectMatchType = (value: string, label: string) => {
+        setMatchType(value);
+        setMatchTypeLabel(label);
+        setMatchTypeDropdownVisible(false);
+    };
 
     const selectOption = (value: SetStateAction<string>, label: string) => {
         setPosition(value);
@@ -258,15 +314,11 @@ export default function QualitativeScouting() {
 
 
     const concatenateData = () => {
-        const key = generateKey();
-        const Hkey = generateHKey()
+
         const data = {
-            key: key,
-            Hkey: Hkey,
-            competitionCode: competitionCode || 0,
             userTeamNumber: userTeamNumber || 0,
-            userName: userName || 0,
-            matchNumber: matchNumber || 0,
+            matchNumber: getFullMatchNumber(),
+            competitionCode: competitionCode || 0,
             teamNumber: teamNumber || 0,
             // Auto
             Driving: Driving || 0,
@@ -287,18 +339,60 @@ export default function QualitativeScouting() {
 
     // Check network status
     useEffect(() => {
-        const unsubscribe = NetInfo.addEventListener(state => {
-            const wasOffline = !isOnline;
-            setIsOnline(state.isConnected ?? false);
+        console.log('🌐 Setting up network listener WITH PREVIOUS STATE TRACKING');
 
-            // If we just came back online, try to sync
-            if (wasOffline && state.isConnected) {
+        let previousState: boolean | null = null;
+
+        const unsubscribe = NetInfo.addEventListener(state => {
+            const currentConnected = state.isConnected ?? false;
+
+            console.log('🌐 === NETWORK STATE CHANGE ===');
+            console.log('🌐 Previous state:', previousState);
+            console.log('🌐 Current state:', currentConnected);
+            console.log('🌐 Connection type:', state.type);
+
+            setIsOnline(currentConnected);
+
+            // If we just came back online (previous was false, now is true)
+            if (previousState === false && currentConnected === true) {
+                console.log('🌐 ✅ CAME BACK ONLINE - Calling syncOfflineData()');
                 syncOfflineData();
+            } else {
+                console.log('🌐 No sync (prev=' + previousState + ', curr=' + currentConnected + ')');
             }
+
+            // Update previous state for next time
+            previousState = currentConnected;
         });
 
         // Load pending uploads count on mount
         loadPendingCount();
+
+        // ✅ Check if we should sync on startup
+        const checkAndSyncOnStartup = async () => {
+            console.log('🔄 Checking if sync needed on startup...');
+
+            const netInfo = await NetInfo.fetch();
+            console.log('🔄 Startup network status:', netInfo.isConnected);
+
+            if (netInfo.isConnected) {
+                const keys = await AsyncStorage.getAllKeys();
+                const offlineKeys = keys.filter(key => key.startsWith('offline_scouting_'));
+
+                console.log('🔄 Pending uploads on startup:', offlineKeys.length);
+
+                if (offlineKeys.length > 0) {
+                    console.log('🔄 ✅ WiFi connected and data pending - Syncing now!');
+                    syncOfflineData();
+                } else {
+                    console.log('🔄 No pending data to sync');
+                }
+            } else {
+                console.log('🔄 Not connected - will sync when WiFi connects');
+            }
+        };
+
+        checkAndSyncOnStartup();
 
         return () => unsubscribe();
     }, []);
@@ -352,7 +446,7 @@ export default function QualitativeScouting() {
 
                         // Try to send to Supabase
                         const {error} = await supabase
-                            .from('Scouting Raw Data')
+                            .from('Scouting Qualitative Data')
                             .upsert(scoutingData, {
                                 onConflict: 'key'
                             });
@@ -430,8 +524,6 @@ export default function QualitativeScouting() {
             return false;
         }
 
-        resetForm()
-
         try {
             // Create unique ID
             const key = generateKey();
@@ -442,7 +534,7 @@ export default function QualitativeScouting() {
                 competitionCode: competitionCode || 0,
                 userTeamNumber: userTeamNumber || 0,
                 userName: userName || 0,
-                matchNumber: matchNumber || 0,
+                matchNumber: getFullMatchNumber(),
                 teamNumber: teamNumber || 0,
                 // Auto
                 Driving: Driving || 0,
@@ -457,9 +549,11 @@ export default function QualitativeScouting() {
             const netInfo = await NetInfo.fetch();
 
             if (!netInfo.isConnected) {
+
                 // Save offline
                 const saved = await saveOffline(Scoutingdata);
                 if (saved) {
+                    resetForm()
                     Alert.alert(
                         'Saved Offline',
                         'No internet connection. Data saved locally and will sync when online.'
@@ -480,6 +574,7 @@ export default function QualitativeScouting() {
 
             if (error) {
                 console.error('Supabase error:', error);
+                resetForm()
 
                 // Save offline as fallback
                 const saved = await saveOffline(Scoutingdata);
@@ -496,6 +591,7 @@ export default function QualitativeScouting() {
             }
 
             Alert.alert('Success', 'Data sent to database!');
+            resetForm()
             return true;
 
         } catch (error: any) {
@@ -508,7 +604,7 @@ export default function QualitativeScouting() {
                 competitionCode: competitionCode || 0,
                 userTeamNumber: userTeamNumber || 0,
                 userName: userName || 0,
-                matchNumber: matchNumber || 0,
+                matchNumber: getFullMatchNumber(),
                 teamNumber: teamNumber || 0,
                 // Auto
                 Driving: Driving || 0,
@@ -521,6 +617,7 @@ export default function QualitativeScouting() {
 
             const saved = await saveOffline(scoutingData);
             if (saved) {
+                resetForm()
                 Alert.alert(
                     'Saved Offline',
                     'Error connecting to database. Data saved locally and will sync later.'
@@ -546,8 +643,14 @@ export default function QualitativeScouting() {
     const handleSelectedData = (data: any) => {
         console.log('6. populateFormWithData called');
 
-        // Set all form values
-        setMatchNumber(data.matchNumber?.toString() || "");
+        // --- MATCH NUMBER & TYPE CLEANING ---
+        const rawMatch = data.matchNumber?.toString() || "";
+
+        // 2. Extract only the numeric part for the text input (e.g., "sf10" -> "10")
+        const numericOnly = rawMatch.replace(/[^0-9]/g, '');
+        setMatchNumber(numericOnly);
+        // -------------------------------------
+
         setTeamNumber(data.teamNumber?.toString() || "");
 
         // Sliders
@@ -626,6 +729,8 @@ export default function QualitativeScouting() {
                 </View>
             </Modal>
 
+
+
             <View className="px-6 pt-16 pb-10">
                 {/* Header */}
                 <View className="mb-6">
@@ -662,6 +767,7 @@ export default function QualitativeScouting() {
                             <FontAwesome name="chevron-down" size={10} color="#3b82f6" />
                         </TouchableOpacity>
                     </View>
+
 
                     {/* Team Number */}
                     <View className="flex-[1.2]">
