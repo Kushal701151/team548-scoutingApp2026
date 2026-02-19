@@ -145,7 +145,7 @@ export default function SettingsScreen() {
                         </Text>
                         <TextInput
                             className="bg-neutral-900 border-2 border-cyan-500/20 focus:border-cyan-500 rounded-2xl p-4 text-lg text-white"
-                            placeholder="Enter your name"
+                            placeholder="Enter a unique user id"
                             placeholderTextColor="#4b5563"
                             value={name}
                             onChangeText={setName}
