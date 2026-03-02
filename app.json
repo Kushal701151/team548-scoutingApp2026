@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "Mane Frame",
-    "slug": "MANE-FRAME-Scouting App",
-    "version": "1.0.0",
+    "slug": "MANE-FRAME-Scouting-App",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
@@ -36,6 +36,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "204bc8ed-b997-4e93-861c-46d00cfb3549"
+      }
     }
   }
 }
