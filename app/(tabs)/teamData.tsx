@@ -59,7 +59,7 @@ function PureLineChart({ data, labels }: { data: number[]; labels: string[] }) {
         i === 0 || i === data.length - 1 || i % step === 0;
 
     return (
-        <View style={{ width: CHART_W, height: CHART_H + LABEL_H }}>
+        <View style={{ width: CHART_W, height: CHART_H + LABEL_H, position: 'relative' }}>
             {/* Guide lines */}
             {[0, 0.5, 1].map((t, i) => (
                 <View
@@ -280,6 +280,8 @@ export default function AnalysisScreen() {
     const graphData      = activeStat && matchHistory ? matchHistory.map(m => Number(m[activeStat]) || 0) : [];
     const graphLabels    = matchHistory ? matchHistory.map(m => shortLabel(m.match_label)) : [];
     const activeStatMeta = STATS.find(s => s.key === activeStat);
+    const bestMatch  = matchHistory ? matchHistory.reduce((a, b) => b.total_points > a.total_points ? b : a) : null;
+    const worstMatch = matchHistory ? matchHistory.reduce((a, b) => b.total_points < a.total_points ? b : a) : null;
 
     return (
         <ScrollView className="flex-1 bg-black">
@@ -514,6 +516,47 @@ export default function AnalysisScreen() {
                                             }}>
                                             </Text>
                                             <PureLineChart data={graphData} labels={graphLabels} />
+                                        </View>
+                                    )}
+
+                                    {/* ── Best / Worst Match ───────────────────────── */}
+                                    {bestMatch && worstMatch && (
+                                        <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+                                            {[
+                                                { label: 'Best Match',  match: bestMatch,  color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
+                                                { label: 'Worst Match', match: worstMatch, color: '#ef4444', bg: 'rgba(239,68,68,0.08)'   },
+                                            ].map(({ label, match, color, bg }) => (
+                                                <View key={label} style={{
+                                                    flex:            1,
+                                                    backgroundColor: bg,
+                                                    borderRadius:    20,
+                                                    borderWidth:     2,
+                                                    borderColor:     color + '33',
+                                                    padding:         16,
+                                                }}>
+                                                    <Text style={{ color, fontSize: 9, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>
+                                                        {label}
+                                                    </Text>
+                                                    <Text style={{ color: '#fff', fontSize: 28, fontWeight: '900', letterSpacing: -1 }}>
+                                                        {match.total_points}
+                                                    </Text>
+                                                    <Text style={{ color: '#737373', fontSize: 11, fontWeight: '700', marginTop: 2 }}>
+                                                        pts · {shortLabel(match.match_label)}
+                                                    </Text>
+                                                    <View style={{ marginTop: 10, gap: 4 }}>
+                                                        {[
+                                                            { k: 'Auto',    v: match.auto_fuel      },
+                                                            { k: 'Passes',  v: match.total_passes   },
+                                                            { k: 'Endgame', v: match.endgame_points },
+                                                        ].map(({ k, v }) => (
+                                                            <View key={k} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                                                <Text style={{ color: '#525252', fontSize: 11, fontWeight: '600' }}>{k}</Text>
+                                                                <Text style={{ color: '#a3a3a3', fontSize: 11, fontWeight: '800' }}>{v}</Text>
+                                                            </View>
+                                                        ))}
+                                                    </View>
+                                                </View>
+                                            ))}
                                         </View>
                                     )}
 
